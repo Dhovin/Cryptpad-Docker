@@ -10,16 +10,16 @@ services:
       - CPAD_INSTALL_ONLYOFFICE=${CPAD_INSTALL_ONLYOFFICE:-true}
       - TZ=${TZ:-UTC}
     volumes:
-      # Data storage paths (filesystem database)
-      - ./data/blob:/cryptpad/blob
-      - ./data/block:/cryptpad/block
-      - ./data/data:/cryptpad/data
-      - ./data/files:/cryptpad/datastore
+      # Storage paths mounted on host at /media/cryptpad/
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/blob:/cryptpad/blob
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/block:/cryptpad/block
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/data:/cryptpad/data
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/files:/cryptpad/datastore
       # User customisations (logos, colors, application config)
-      - ./customize:/cryptpad/customize
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/customize:/cryptpad/customize
       # OnlyOffice builds and configuration
-      - ./onlyoffice-dist:/cryptpad/www/common/onlyoffice/dist
-      - ./onlyoffice-conf:/cryptpad/onlyoffice-conf
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/onlyoffice-dist:/cryptpad/www/common/onlyoffice/dist
+      - ${CPAD_STORAGE_PATH:-/media/cryptpad}/onlyoffice-conf:/cryptpad/onlyoffice-conf
       # CryptPad configuration file
       - ./config/config.js:/cryptpad/config/config.js:ro
     ports:
