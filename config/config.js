@@ -6,8 +6,8 @@
  * Dynamically configurable via environment variables with safe defaults.
  */
 
-const mainDomain = process.env.CPAD_MAIN_DOMAIN || 'cryptpad.example.com';
-const sandboxDomain = process.env.CPAD_SANDBOX_DOMAIN || 'cryptpad-sandbox.example.com';
+const mainDomain = process.env.CPAD_MAIN_DOMAIN || 'pad.dhovin.me';
+const sandboxDomain = process.env.CPAD_SANDBOX_DOMAIN || 'pad-sandbox.dhovin.me';
 
 module.exports = {
     /*  httpUnsafeOrigin is the URL that clients will enter to load your instance.
@@ -25,7 +25,7 @@ module.exports = {
      */
     httpAddress: process.env.CPAD_HTTP_ADDRESS || '0.0.0.0',
 
-    /*  httpPort specifies on which port the nodejs server listens. */
+    /*  httpPort specifies on which port the nodejs server listens inside container. */
     httpPort: parseInt(process.env.CPAD_HTTP_PORT || '3000', 10),
 
     /*  Websockets need to be exposed on a separate port from HTTP traffic.
@@ -56,10 +56,6 @@ module.exports = {
     /* Logging level: 'error', 'warn', 'info', 'debug' */
     logLevel: process.env.CPAD_LOG_LEVEL || 'info',
 
-    /* Admin Public Signing Keys (Deprecated in favor of the /admin setup panel,
-     * but can still be specified if desired)
-     */
-    adminKeys: [
-        // "[cryptpad-user1@my.awesome.website/YZgXQxKR0Rcb6r6CmxHPdAGLVludrAF2lEnkbx1vVOo=]",
-    ],
+    /* Admin Public Signing Keys (Can also be managed via /admin setup panel) */
+    adminKeys: [],
 };

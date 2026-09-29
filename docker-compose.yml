@@ -4,8 +4,8 @@ services:
     container_name: cryptpad
     restart: unless-stopped
     environment:
-      - CPAD_MAIN_DOMAIN=${CPAD_MAIN_DOMAIN:-cryptpad.example.com}
-      - CPAD_SANDBOX_DOMAIN=${CPAD_SANDBOX_DOMAIN:-cryptpad-sandbox.example.com}
+      - CPAD_MAIN_DOMAIN=${CPAD_MAIN_DOMAIN:-pad.dhovin.me}
+      - CPAD_SANDBOX_DOMAIN=${CPAD_SANDBOX_DOMAIN:-pad-sandbox.dhovin.me}
       - CPAD_CONF=/cryptpad/config/config.js
       - CPAD_INSTALL_ONLYOFFICE=${CPAD_INSTALL_ONLYOFFICE:-true}
       - TZ=${TZ:-UTC}
@@ -23,9 +23,10 @@ services:
       # CryptPad configuration file
       - ./config/config.js:/cryptpad/config/config.js:ro
     ports:
-      # Exposed locally to reverse proxy (e.g., Nginx, Caddy, or Traefik)
-      - "127.0.0.1:${CPAD_HTTP_PORT:-3000}:3000"
-      - "127.0.0.1:${CPAD_WEBSOCKET_PORT:-3003}:3003"
+      # Host port 3010 forwards to container internal 3000
+      - "${CPAD_HTTP_PORT:-3010}:3000"
+      # Host port 3013 forwards to container internal 3003 (WebSocket)
+      - "${CPAD_WEBSOCKET_PORT:-3013}:3003"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/checkup/ > /dev/null || exit 1"]
       interval: 30s
