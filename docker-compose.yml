@@ -1,0 +1,34 @@
+services:
+  cryptpad:
+    image: cryptpad/cryptpad:version-${CPAD_VERSION:-2026.5.1}
+    container_name: cryptpad
+    restart: unless-stopped
+    environment:
+      - CPAD_MAIN_DOMAIN=${CPAD_MAIN_DOMAIN:-cryptpad.example.com}
+      - CPAD_SANDBOX_DOMAIN=${CPAD_SANDBOX_DOMAIN:-cryptpad-sandbox.example.com}
+      - CPAD_CONF=/cryptpad/config/config.js
+      - CPAD_INSTALL_ONLYOFFICE=${CPAD_INSTALL_ONLYOFFICE:-true}
+      - TZ=${TZ:-UTC}
+    volumes:
+      # Data storage paths (filesystem database)
+      - ./data/blob:/cryptpad/blob
+      - ./data/block:/cryptpad/block
+      - ./data/data:/cryptpad/data
+      - ./data/files:/cryptpad/datastore
+      # User customisations (logos, colors, application config)
+      - ./customize:/cryptpad/customize
+      # OnlyOffice builds and configuration
+      - ./onlyoffice-dist:/cryptpad/www/common/onlyoffice/dist
+      - ./onlyoffice-conf:/cryptpad/onlyoffice-conf
+      # CryptPad configuration file
+      - ./config/config.js:/cryptpad/config/config.js:ro
+    ports:
+      # Exposed locally to reverse proxy (e.g., Nginx, Caddy, or Traefik)
+      - "127.0.0.1:${CPAD_HTTP_PORT:-3000}:3000"
+      - "127.0.0.1:${CPAD_WEBSOCKET_PORT:-3003}:3003"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/checkup/ > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s

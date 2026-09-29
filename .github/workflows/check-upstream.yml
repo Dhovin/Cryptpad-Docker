@@ -1,0 +1,185 @@
+name: Check for Upstream CryptPad Updates
+
+on:
+  schedule:
+    # Run daily at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    # Allow manual triggering at any time
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-upstream:
+    name: Check Upstream Releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read Current Version
+        id: current_version
+        run: |
+          CURRENT_VER=$(cat VERSION | tr -d '[:space:]')
+          echo "current_version=$CURRENT_VER" >> $GITHUB_OUTPUT
+          echo "Current repository version: $CURRENT_VER"
+
+      - name: Fetch Latest CryptPad Release
+        id: upstream
+        run: |
+          RELEASE_JSON=$(curl -sSL -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/cryptpad/cryptpad/releases/latest)
+          
+          UPSTREAM_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name // empty')
+          RELEASE_NAME=$(echo "$RELEASE_JSON" | jq -r '.name // empty')
+          RELEASE_URL=$(echo "$RELEASE_JSON" | jq -r '.html_url // empty')
+          RELEASE_BODY=$(echo "$RELEASE_JSON" | jq -r '.body // empty')
+
+          if [ -z "$UPSTREAM_TAG" ]; then
+            echo "Error: Failed to fetch upstream release tag."
+            exit 1
+          fi
+
+          echo "upstream_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
+          
+          # Save release body to a temporary markdown file
+          echo "$RELEASE_BODY" > /tmp/release_notes.md
+          echo "Latest upstream release tag: $UPSTREAM_TAG"
+
+      - name: Compare Versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current_version.outputs.current_version }}"
+          UPSTREAM="${{ steps.upstream.outputs.upstream_tag }}"
+
+          if [ "$CURRENT" = "$UPSTREAM" ]; then
+            echo "Repository is up to date ($CURRENT)."
+            echo "update_available=false" >> $GITHUB_OUTPUT
+          else
+            echo "New version available: $UPSTREAM (current: $CURRENT)"
+            echo "update_available=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Inspect Upstream Changes & OnlyOffice
+        id: diff_check
+        if: steps.compare.outputs.update_available == 'true'
+        run: |
+          CURRENT="${{ steps.current_version.outputs.current_version }}"
+          UPSTREAM="${{ steps.upstream.outputs.upstream_tag }}"
+
+          # Compare git commit diff between versions on upstream repo
+          COMPARE_JSON=$(curl -sSL -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/cryptpad/cryptpad/compare/${CURRENT}...${UPSTREAM}")
+          
+          # Check if install-onlyoffice.sh was modified
+          OO_MODIFIED=$(echo "$COMPARE_JSON" | jq '[.files[]? | select(.filename == "install-onlyoffice.sh")] | length > 0')
+
+          if [ "$OO_MODIFIED" = "true" ]; then
+            echo "oo_status=updated" >> $GITHUB_OUTPUT
+            echo "OnlyOffice install script was modified upstream."
+          else
+            echo "oo_status=unchanged" >> $GITHUB_OUTPUT
+            echo "OnlyOffice install script is unchanged between $CURRENT and $UPSTREAM."
+          fi
+
+      - name: Check for Existing Pull Request
+        id: pr_check
+        if: steps.compare.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UPSTREAM="${{ steps.upstream.outputs.upstream_tag }}"
+          BRANCH_NAME="upgrade/cryptpad-${UPSTREAM}"
+          
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Pull Request #$EXISTING_PR already exists for $BRANCH_NAME."
+            echo "pr_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "pr_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Upgrade Branch and Update Version
+        if: steps.compare.outputs.update_available == 'true' && steps.pr_check.outputs.pr_exists == 'false'
+        run: |
+          UPSTREAM="${{ steps.upstream.outputs.upstream_tag }}"
+          CURRENT="${{ steps.current_version.outputs.current_version }}"
+          BRANCH_NAME="upgrade/cryptpad-${UPSTREAM}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH_NAME"
+
+          # Update VERSION file
+          echo "$UPSTREAM" > VERSION
+
+          # Update docker-compose.yml default version
+          sed -i "s/version-\${CPAD_VERSION:-$CURRENT}/version-\${CPAD_VERSION:-$UPSTREAM}/g" docker-compose.yml
+          sed -i "s/CPAD_VERSION:-$CURRENT/CPAD_VERSION:-$UPSTREAM/g" docker-compose.yml
+
+          git add VERSION docker-compose.yml
+          git commit -m "chore(deps): upgrade CryptPad to $UPSTREAM"
+          git push origin "$BRANCH_NAME"
+
+      - name: Generate Pull Request
+        if: steps.compare.outputs.update_available == 'true' && steps.pr_check.outputs.pr_exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UPSTREAM="${{ steps.upstream.outputs.upstream_tag }}"
+          CURRENT="${{ steps.current_version.outputs.current_version }}"
+          BRANCH_NAME="upgrade/cryptpad-${UPSTREAM}"
+          OO_STATUS="${{ steps.diff_check.outputs.oo_status }}"
+          RELEASE_URL="${{ steps.upstream.outputs.release_url }}"
+
+          # Prepare OnlyOffice Status Section
+          if [ "$OO_STATUS" = "updated" ]; then
+            OO_SECTION="> 📄 **OnlyOffice Updates Detected**  
+            > Upstream modified \`install-onlyoffice.sh\` between $CURRENT and $UPSTREAM.  
+            > CryptPad will automatically update the OnlyOffice wasm/builds in your volume on deployment."
+          else
+            OO_SECTION="> 📄 **OnlyOffice Status**: \`install-onlyoffice.sh\` is unchanged in this release."
+          fi
+
+          # Construct PR body
+          PR_BODY=$(cat <<EOF
+          ## CryptPad Upgrade: \`$CURRENT\` -> \`$UPSTREAM\`
+
+          An official CryptPad release has been detected upstream:
+          - **Release**: [$UPSTREAM]($RELEASE_URL)
+          - **Branch**: \`$BRANCH_NAME\`
+
+          $OO_SECTION
+
+          ---
+
+          ### Upstream Release Notes
+          $(cat /tmp/release_notes.md)
+
+          ---
+
+          ### Pre-Deployment Checklist
+          - [ ] Review release notes above for any breaking changes or required manual migrations.
+          - [ ] Verify that \`loginSalt\` in \`customize/application_config.js\` remains unchanged.
+          - [ ] Verify that TLS certificates cover both \`CPAD_MAIN_DOMAIN\` and \`CPAD_SANDBOX_DOMAIN\`.
+          - [ ] After merge and container restart, visit \`https://<main-domain>/checkup/\` to confirm diagnostics pass.
+
+          *Auto-generated by \`.github/workflows/check-upstream.yml\`*
+          EOF
+          )
+
+          gh pr create \
+            --title "chore(deps): upgrade CryptPad to $UPSTREAM" \
+            --body "$PR_BODY" \
+            --head "$BRANCH_NAME" \
+            --base main \
+            --label "dependencies" \
+            --label "cryptpad-upgrade"

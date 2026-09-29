@@ -1,0 +1,53 @@
+name: Validate Configuration & Syntax
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Lint & Validate Configurations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate JavaScript Configurations
+        run: |
+          echo "Checking config/config.js syntax..."
+          node -c config/config.js
+
+          echo "Checking customize/application_config.js syntax..."
+          node -c customize/application_config.js
+
+      - name: Validate Docker Compose Configuration
+        run: |
+          echo "Validating docker-compose.yml syntax..."
+          docker compose config --quiet
+
+      - name: Validate Shell Scripts
+        run: |
+          echo "Checking shell scripts syntax..."
+          bash -n scripts/setup.sh
+          bash -n scripts/update.sh
+          bash -n scripts/backup.sh
+          bash -n scripts/evict-inactive.sh
+          bash -n scripts/evict-archived.sh
+
+      - name: Verify VERSION Format
+        run: |
+          VER=$(cat VERSION | tr -d '[:space:]')
+          if [ -z "$VER" ]; then
+            echo "Error: VERSION file cannot be empty."
+            exit 1
+          fi
+          echo "VERSION format verified: $VER"
